@@ -8,3 +8,4 @@ estado/
 src/trainer_pb2*.py
 nuscenes/
 *.zip
+estado/

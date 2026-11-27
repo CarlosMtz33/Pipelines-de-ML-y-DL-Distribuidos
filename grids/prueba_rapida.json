@@ -1,0 +1,10 @@
+{
+  "_comentario": "Lote pequeño para comprobar que todo funciona (unos segundos por trabajo).",
+  "name": "prueba-rapida",
+  "seed": 42,
+  "requests": [
+    {"model": "linear", "grid": {"variant": ["ridge", "lasso"], "alpha": [0.1, 1]}},
+    {"model": "mlp", "config": {"epochs": 8}, "grid": {"hidden": [[32], [64, 32]]}},
+    {"model": "cnn", "config": {"epochs": 3, "img_size": 32}, "grid": {"filters": [8, 16]}}
+  ]
+}
