@@ -1,0 +1,24 @@
+{
+  "_comentario": "Definiciones del proyecto. Si cambian, se cambian SOLO aqui y se vuelve a correr la preparacion (cambia la VERSION de los datos y por lo tanto los job_id).",
+  "version_nuscenes": "v1.0-mini",
+  "_comentario_particion": "Se usa la separacion OFICIAL de nuScenes (nuscenes.utils.splits). En mini solo hay mini_train (8 escenas) y mini_val (2 escenas). test = mini_val oficial, sin tocar. train + val = mini_train: dos de sus escenas se apartan como validacion para elegir el mejor modelo del grid. Se eligieron 0796 y 1094 porque tienen las 5 clases. prepare_nuscenes.py comprueba que esto coincide con la separacion oficial.",
+  "particion": {
+    "train": ["scene-0061", "scene-0553", "scene-0655", "scene-0757", "scene-1077", "scene-1100"],
+    "val": ["scene-0796", "scene-1094"],
+    "test": ["scene-0103", "scene-0916"]
+  },
+  "_comentario_clases": "Clases de la CNN (las que pidio el profesor). Ambulancia (vehicle.emergency.ambulance) no existe en v1.0-mini, por eso no se incluye. Los objetos de otras categorias (camiones, conos, barreras...) se quedan en objetos.csv para la regresion pero no entran a la CNN.",
+  "grupos_categoria": [
+    ["vehicle.motorcycle", "moto"],
+    ["vehicle.car", "carro"],
+    ["vehicle.bus.", "autobus"],
+    ["human.pedestrian.", "peaton"],
+    ["vehicle.bicycle", "bicicleta"],
+    ["vehicle.emergency.ambulance", "ambulancia"]
+  ],
+  "grupo_por_defecto": "otros",
+  "clases_cnn": ["moto", "carro", "autobus", "peaton", "bicicleta"],
+  "tam_recorte": 64,
+  "min_lado_recorte_px": 16,
+  "margen_recorte": 0.1
+}
