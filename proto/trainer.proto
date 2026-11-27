@@ -1,0 +1,225 @@
+// Contrato gRPC del servidor distribuido de pipelines de entrenamiento.
+//
+// Un solo servicio, el del coordinador, con tres grupos de llamadas:
+//   1. Usuario  -> coordinador: enviar trabajos y consultar su estado/resultado.
+//   2. Nodo     -> coordinador: heartbeat, pedir trabajo (consumidores competidores),
+//                               reportar avance, checkpoints y resultado.
+//   3. Dashboard-> coordinador: foto del estado y flujo (streaming) de eventos.
+//
+// Los nodos NO exponen servidor gRPC: siempre llaman ellos al coordinador.
+// Así un nodo detrás de NAT o en otra máquina solo necesita alcanzar al coordinador.
+
+syntax = "proto3";
+
+package trainer;
+
+service Coordinator {
+  // ---------- Usuario ----------
+  // Envía un trabajo o un grid search. Idempotente: si el trabajo ya existe
+  // (mismo job_id) no se vuelve a encolar, se devuelve el existente.
+  // Errores: INVALID_ARGUMENT si el modelo no es linear/mlp/cnn o la config es inválida.
+  rpc Submit(SubmitRequest) returns (SubmitReply);
+  rpc GetJob(JobQuery) returns (JobInfo);
+  rpc GetRequest(RequestQuery) returns (RequestStatus);
+  rpc ListJobs(ListQuery) returns (JobList);
+  rpc GetModel(JobQuery) returns (ModelBlob);
+
+  // ---------- Nodo (worker) ----------
+  // Heartbeat periódico. También sirve de registro: el primer heartbeat da de alta al nodo.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatReply);
+  // El nodo pide trabajo cuando tiene espacio libre (consumidores competidores).
+  rpc PullJob(PullRequest) returns (PullReply);
+  rpc ReportProgress(ProgressReport) returns (Ack);
+  rpc SaveCheckpoint(CheckpointUpload) returns (Ack);
+  rpc ReportResult(JobResult) returns (ResultAck);
+
+  // ---------- Dashboard ----------
+  rpc GetSnapshot(SnapshotRequest) returns (Snapshot);
+  rpc WatchEvents(WatchRequest) returns (stream Event);
+}
+
+// ======================= Usuario =======================
+
+message SubmitRequest {
+  string model = 1;             // "linear" | "mlp" | "cnn"; cualquier otro -> INVALID_ARGUMENT
+  string config_json = 2;       // configuración base (JSON)
+  string grid_json = 3;         // opcional: {"param": [v1, v2, ...]} -> producto cartesiano
+  int32 seed = 4;               // semilla; forma parte del job_id
+  string name = 5;              // etiqueta libre (p. ej. "referencia" o "exp-01")
+}
+
+message JobRef {
+  string job_id = 1;
+  string state = 2;
+  bool already_existed = 3;     // true si el trabajo ya estaba (envío repetido)
+  string config_json = 4;
+}
+
+message SubmitReply {
+  string request_id = 1;        // hash de los job_id: la misma petición da el mismo request_id
+  repeated JobRef jobs = 2;
+}
+
+message JobQuery { string job_id = 1; }
+message RequestQuery { string request_id = 1; }
+message ListQuery {
+  string request_id = 1;        // vacío = todos
+  string state = 2;             // vacío = todos
+}
+
+message JobInfo {
+  string job_id = 1;
+  string model = 2;
+  string config_json = 3;
+  int32 seed = 4;
+  string data_version = 5;
+  string state = 6;             // PENDING | RUNNING | DONE | FAILED
+  string worker_id = 7;         // nodo que lo corre (o que lo terminó)
+  int32 attempts = 8;           // cuántas veces se ha asignado
+  int32 reassignments = 9;      // cuántas veces se devolvió a la cola por falla/timeout
+  int32 epoch = 10;
+  int32 total_epochs = 11;
+  double loss = 12;
+  string metrics_json = 13;
+  string error = 14;
+  double created_at = 15;
+  double started_at = 16;
+  double finished_at = 17;
+  double train_seconds = 18;
+  int32 checkpoint_epoch = 19;  // última época guardada en checkpoint (0 = ninguna)
+}
+
+message JobList { repeated JobInfo jobs = 1; }
+
+message RequestStatus {
+  string request_id = 1;
+  string name = 2;
+  int32 pending = 3;
+  int32 running = 4;
+  int32 done = 5;
+  int32 failed = 6;
+  repeated JobInfo jobs = 7;
+  string best_job_id = 8;       // mejor trabajo del grid según la métrica de validación
+  string best_metric = 9;       // p. ej. "val_rmse=3.21"
+}
+
+message ModelBlob {
+  string job_id = 1;
+  string filename = 2;
+  bytes data = 3;
+  string metrics_json = 4;
+}
+
+// ======================= Nodo =======================
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  string hostname = 2;
+  string data_version = 3;      // versión de los datos preparados que tiene el nodo
+  bool ready = 4;               // false mientras el nodo arranca o carga datos
+  repeated string running_job_ids = 5;
+  map<string, int32> slots = 6; // capacidad por modelo (bulkhead), p. ej. {"cnn": 1}
+}
+
+message HeartbeatReply {
+  int32 interval_ms = 1;              // cada cuánto debe latir el nodo
+  repeated string cancel_job_ids = 2; // trabajos que el nodo debe abandonar (ya reasignados o terminados)
+  bool accepted = 3;                  // false si la versión de datos no coincide
+  string message = 4;
+}
+
+message PullRequest {
+  string worker_id = 1;
+  repeated string accept_models = 2; // modelos para los que el nodo tiene espacio libre
+}
+
+message Assignment {
+  string job_id = 1;
+  string lease_id = 2;          // identifica ESTA asignación; los reportes con otro lease se ignoran
+  string model = 3;
+  string config_json = 4;
+  int32 seed = 5;
+  string data_version = 6;
+  double timeout_s = 7;         // plazo del trabajo
+  int32 attempt = 8;
+  bytes checkpoint = 9;         // checkpoint previo (si otro nodo avanzó antes de caer)
+  int32 checkpoint_epoch = 10;
+}
+
+message PullReply {
+  bool has_job = 1;
+  Assignment job = 2;
+}
+
+message ProgressReport {
+  string job_id = 1;
+  string lease_id = 2;
+  string worker_id = 3;
+  int32 epoch = 4;
+  int32 total_epochs = 5;
+  double loss = 6;
+  string extra_json = 7;        // p. ej. {"val_acc": 0.81}
+}
+
+message CheckpointUpload {
+  string job_id = 1;
+  string lease_id = 2;
+  string worker_id = 3;
+  int32 epoch = 4;
+  bytes data = 5;
+}
+
+message Ack {
+  bool ok = 1;
+  bool cancel = 2;              // true: el trabajo ya no es de este nodo, debe detenerse
+}
+
+message JobResult {
+  string job_id = 1;
+  string lease_id = 2;
+  string worker_id = 3;
+  bool success = 4;
+  string metrics_json = 5;
+  bytes model = 6;
+  string model_filename = 7;
+  string error = 8;
+  double train_seconds = 9;
+}
+
+message ResultAck {
+  bool accepted = 1;
+  string reason = 2;            // "ok" | "duplicado" | "lease vencido" | ...
+}
+
+// ======================= Dashboard =======================
+
+message SnapshotRequest {}
+
+message WorkerInfo {
+  string worker_id = 1;
+  string hostname = 2;
+  bool alive = 3;
+  bool ready = 4;
+  double last_seen = 5;
+  repeated string running_job_ids = 6;
+  int32 completed = 7;
+  int32 failed = 8;
+  map<string, int32> slots = 9;
+}
+
+message Snapshot {
+  repeated WorkerInfo workers = 1;
+  repeated JobInfo jobs = 2;
+  double server_time = 3;
+}
+
+message WatchRequest {}
+
+message Event {
+  double ts = 1;
+  string kind = 2;              // job_submitted | job_started | job_progress | job_done | job_failed
+                                // job_requeued | worker_up | worker_down | result_discarded ...
+  string job_id = 3;
+  string worker_id = 4;
+  string payload_json = 5;
+}
