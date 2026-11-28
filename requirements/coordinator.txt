@@ -1,0 +1,6 @@
+# Coordinador: solo gRPC (no necesita bibliotecas de ML).
+# gRPC 1.76: en 1.71 encontramos que los canales de larga vida no se reconectaban
+# después de matar y levantar el coordinador. Con 1.76 se reconectan solos.
+grpcio==1.76.0
+grpcio-health-checking==1.76.0
+protobuf==6.33.6

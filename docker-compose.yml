@@ -1,0 +1,101 @@
+# Sistema completo en una máquina:
+#   docker compose build
+#   docker compose up -d --scale worker=2
+#   docker compose run --rm client batch grids/referencia.json --wait
+#
+# Variables (se pueden poner en un archivo .env junto a este):
+#   NUSCENES_PATH carpeta de nuScenes descomprimida (solo para 'docker compose run --rm prep')
+#   DATA_PATH   ruta a los datos preparados        (por defecto ./data/prepared)
+#   NODE_CPUS   CPUs por nodo                      (por defecto 2)
+#   NODE_MEM    memoria por nodo                   (por defecto 3g)
+#   TORCH_THREADS hilos de PyTorch por proceso     (por defecto 2)
+#   SLOTS       bulkhead por nodo                  (por defecto linear=4,mlp=2,cnn=1)
+#   MAX_JOBS    trabajos simultáneos por nodo      (por defecto 4)
+
+name: pipelines
+
+x-data-volume: &data-volume ${DATA_PATH:-./data/prepared}:/data:ro
+
+services:
+  coordinator:
+    build: { context: ., dockerfile: docker/Dockerfile.coordinator }
+    image: pipelines/coordinator:1.0
+    ports: ["50051:50051"]
+    environment:
+      HEARTBEAT_INTERVAL_MS: ${HEARTBEAT_INTERVAL_MS:-2000}
+      HEARTBEAT_MISSES: ${HEARTBEAT_MISSES:-3}
+      TIMEOUT_LINEAR: ${TIMEOUT_LINEAR:-120}
+      TIMEOUT_MLP: ${TIMEOUT_MLP:-900}
+      TIMEOUT_CNN: ${TIMEOUT_CNN:-1800}
+      MAX_ATTEMPTS: ${MAX_ATTEMPTS:-4}
+      SCHEDULING: ${SCHEDULING:-lpt}
+    volumes:
+      - coord-state:/state          # cola, resultados y checkpoints: sobreviven a un reinicio
+      - *data-volume                # solo para leer data/VERSION
+    cpus: 1.0
+    mem_limit: 1g
+    # Si el coordinador muere, Docker lo vuelve a levantar y recupera el estado de /state.
+    restart: unless-stopped
+
+  worker:
+    build: { context: ., dockerfile: docker/Dockerfile.node }
+    image: pipelines/node:1.0
+    depends_on:
+      coordinator: { condition: service_healthy }
+    environment:
+      COORDINATOR_ADDR: coordinator:50051
+      SLOTS: ${SLOTS:-linear=4,mlp=2,cnn=1}
+      MAX_JOBS: ${MAX_JOBS:-4}
+      TORCH_THREADS: ${TORCH_THREADS:-2}
+      OMP_NUM_THREADS: ${TORCH_THREADS:-2}
+      SLOW_FACTOR: ${SLOW_FACTOR:-0}
+    volumes:
+      - *data-volume                # copia local de los datos preparados (solo lectura)
+      - ./resultados:/results       # copia local de modelos/métricas y salida de la línea base
+    # Límites de recursos: un trabajo de CNN no puede tirar al nodo ni a la máquina.
+    cpus: ${NODE_CPUS:-2}
+    mem_limit: ${NODE_MEM:-3g}
+    restart: "no"                   # en la demo, un nodo detenido debe quedarse detenido
+
+  # Dashboard en tiempo real (punto extra). Contenedor aparte: si se cae, el sistema sigue.
+  dashboard:
+    build: { context: ., dockerfile: docker/Dockerfile.dashboard }
+    image: pipelines/dashboard:1.0
+    depends_on:
+      coordinator: { condition: service_healthy }
+    environment:
+      COORDINATOR_ADDR: coordinator:50051
+    ports: ["8080:8080"]
+    cpus: 0.5
+    mem_limit: 256m
+    restart: unless-stopped
+    profiles: ["dashboard"]
+
+  # Herramientas (no se levantan con "up"): preparación de datos y cliente.
+
+  # Preparación de nuScenes, UNA vez, con la misma imagen de los nodos (ya trae nuscenes-devkit):
+  #   docker compose run --rm prep
+  # NUSCENES_PATH = carpeta que contiene v1.0-mini/, samples/ y maps/ (la carpeta "nuscenes"
+  # que sale al descomprimir el zip).
+  prep:
+    image: pipelines/node:1.0
+    volumes:
+      - ${NUSCENES_PATH:-./nuscenes}:/nuscenes:ro
+      - ./data:/app/data
+      - ./data_prep:/app/data_prep:ro
+    command: ["python", "data_prep/prepare_nuscenes.py", "--dataroot", "/nuscenes", "--out", "data/prepared"]
+    mem_limit: 4g
+    profiles: ["tools"]
+
+  client:
+    image: pipelines/node:1.0
+    environment:
+      COORDINATOR_ADDR: coordinator:50051
+    volumes:
+      - ./grids:/app/grids:ro
+      - ./modelos:/app/modelos
+    entrypoint: ["python", "-m", "client.cli"]
+    profiles: ["tools"]
+
+volumes:
+  coord-state:

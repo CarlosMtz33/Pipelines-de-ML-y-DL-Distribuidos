@@ -1,0 +1,10 @@
+# Sin esto, "docker build" mandaría los datos (cientos de MB) como contexto en cada build.
+data/
+resultados/
+modelos/
+.git/
+.venv/
+**/__pycache__/
+*.pyc
+nuscenes/
+*.zip

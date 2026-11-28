@@ -1,0 +1,20 @@
+# ---- etapa 1: generar el código gRPC a partir del .proto
+FROM python:3.12.8-slim-bookworm AS proto
+RUN pip install --no-cache-dir grpcio-tools==1.76.0
+WORKDIR /build
+COPY proto/ proto/
+RUN mkdir out && python -m grpc_tools.protoc -I proto --python_out=out --grpc_python_out=out proto/trainer.proto
+
+# ---- etapa 2: imagen del coordinador
+FROM python:3.12.8-slim-bookworm
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app/src
+WORKDIR /app
+COPY requirements/coordinator.txt requirements/
+RUN pip install --no-cache-dir -r requirements/coordinator.txt
+COPY src/common src/common
+COPY src/coordinator src/coordinator
+COPY --from=proto /build/out/ src/
+EXPOSE 50051
+HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=3 \
+  CMD ["python", "-m", "common.healthcheck", "coordinator"]
+CMD ["python", "-m", "coordinator.server"]

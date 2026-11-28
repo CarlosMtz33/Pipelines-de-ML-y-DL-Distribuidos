@@ -1,0 +1,31 @@
+# Imagen de nodo preparada para los tres modelos: todo instalado de antemano,
+# versiones fijas, solo CPU. Ningún trabajo instala nada mientras corre.
+
+FROM python:3.12.8-slim-bookworm AS proto
+RUN pip install --no-cache-dir grpcio-tools==1.76.0
+WORKDIR /build
+COPY proto/ proto/
+RUN mkdir out && python -m grpc_tools.protoc -I proto --python_out=out --grpc_python_out=out proto/trainer.proto
+
+FROM python:3.12.8-slim-bookworm
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app/src \
+    OMP_NUM_THREADS=2 MKL_NUM_THREADS=2
+WORKDIR /app
+# PyTorch versión CPU (mucho más ligera que la de CUDA)
+RUN pip install --no-cache-dir torch==2.6.0+cpu --index-url https://download.pytorch.org/whl/cpu
+COPY requirements/ requirements/
+RUN pip install --no-cache-dir -r requirements/node.txt
+# Biblioteca oficial de nuScenes (como pidió el profesor: dentro del Dockerfile, para
+# que todos los contenedores la traigan). Se instala con --no-deps porque su lista de
+# dependencias fija versiones viejas (Shapely<2, matplotlib<3.6) que no compilan en
+# Python 3.12; las que de verdad usa ya están en requirements/node.txt.
+RUN pip install --no-cache-dir --no-deps nuscenes-devkit==1.1.11 \
+ && python -c "from nuscenes.nuscenes import NuScenes"
+COPY src/ src/
+COPY data_prep/ data_prep/
+COPY --from=proto /build/out/ src/
+COPY grids/ grids/
+# Health check: el nodo cargó los datos y su último heartbeat es reciente.
+HEALTHCHECK --interval=5s --timeout=3s --start-period=60s --retries=3 \
+  CMD ["python", "-m", "common.healthcheck", "worker"]
+CMD ["python", "-m", "worker.node"]

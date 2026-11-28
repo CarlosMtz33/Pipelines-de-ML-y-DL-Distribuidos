@@ -1,0 +1,17 @@
+FROM python:3.12.8-slim-bookworm AS proto
+RUN pip install --no-cache-dir grpcio-tools==1.76.0
+WORKDIR /build
+COPY proto/ proto/
+RUN mkdir out && python -m grpc_tools.protoc -I proto --python_out=out --grpc_python_out=out proto/trainer.proto
+
+FROM python:3.12.8-slim-bookworm
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app/src
+WORKDIR /app
+COPY requirements/coordinator.txt requirements/
+RUN pip install --no-cache-dir -r requirements/coordinator.txt
+COPY src/common src/common
+COPY src/dashboard src/dashboard
+COPY --from=proto /build/out/ src/
+EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=3s CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
+CMD ["python", "-m", "dashboard.app"]

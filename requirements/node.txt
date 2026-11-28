@@ -1,0 +1,15 @@
+# Nodo: gRPC + las bibliotecas de los tres modelos + la biblioteca de nuScenes.
+# Versiones exactas (nada de latest).
+# torch se instala aparte desde el índice de PyTorch para CPU (ver Dockerfile.node).
+# nuscenes-devkit también se instala aparte, con --no-deps (ver Dockerfile.node).
+-r coordinator.txt
+numpy==2.2.6
+pandas==2.2.3
+scikit-learn==1.6.1
+pillow==11.1.0
+# dependencias que nuscenes-devkit sí usa
+pyquaternion==0.9.9
+cachetools==5.5.0
+tqdm==4.67.1
+matplotlib==3.10.0
+opencv-python-headless==4.10.0.84

@@ -1,0 +1,25 @@
+# Nodos en OTRA máquina (para medir con varias computadoras):
+#   1. Copien el repo y los datos preparados (data/prepared) a esa máquina.
+#   2. COORDINATOR_ADDR=<IP de la máquina del coordinador>:50051 \
+#        docker compose -f docker-compose.node.yml up -d --build --scale worker=1
+# Deben tener la MISMA versión de datos que el coordinador (archivo VERSION); si no,
+# el coordinador los rechaza.
+
+name: pipelines-nodos
+
+services:
+  worker:
+    build: { context: ., dockerfile: docker/Dockerfile.node }
+    image: pipelines/node:1.0
+    environment:
+      COORDINATOR_ADDR: ${COORDINATOR_ADDR:?Falta COORDINATOR_ADDR=IP:50051}
+      SLOTS: ${SLOTS:-linear=4,mlp=2,cnn=1}
+      MAX_JOBS: ${MAX_JOBS:-4}
+      TORCH_THREADS: ${TORCH_THREADS:-2}
+      OMP_NUM_THREADS: ${TORCH_THREADS:-2}
+    volumes:
+      - ${DATA_PATH:-./data/prepared}:/data:ro
+      - ./resultados:/results
+    cpus: ${NODE_CPUS:-2}
+    mem_limit: ${NODE_MEM:-3g}
+    restart: "no"
