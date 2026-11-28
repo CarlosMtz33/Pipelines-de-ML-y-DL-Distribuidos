@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipelines distribuidos · Dashboard</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2330; --muted: #6b7280; --line: #e3e6eb;
+    --ok: #1f8a4c; --ok-bg: #e5f4ec; --run: #1d5fd1; --run-bg: #e6eefc;
+    --pend: #8a6d00; --pend-bg: #fbf3d9; --bad: #c0352b; --bad-bg: #fbe7e5;
+    --linear: #6d4fc2; --mlp: #0f7c8c; --cnn: #b4511c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         background: var(--bg); color: var(--ink); }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 24px;
+           background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  .conn { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; margin-left: auto; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
+  .dot.on { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg); }
+  main { padding: 20px 24px 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; max-width: 1500px; margin: 0 auto; }
+  .grid2 > section { min-width: 0; }
+  .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .kpi .v { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .kpi .l { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .kpi.pend .v { color: var(--pend); } .kpi.run .v { color: var(--run); }
+  .kpi.done .v { color: var(--ok); } .kpi.fail .v, .kpi.reas .v { color: var(--bad); }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  section > h2 { font-size: 13px; margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--line);
+                 text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600;
+                 display: flex; align-items: center; gap: 10px; }
+  .grid2 { display: grid; grid-template-columns: 3fr 1fr; gap: 20px; align-items: start; }
+  .nodes { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; padding: 14px; }
+  .node { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .node.down { background: var(--bad-bg); border-color: #f0c2bd; }
+  .node .top { display: flex; align-items: center; gap: 8px; }
+  .node .name { font-weight: 600; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .node .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .node .jobs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; min-height: 22px; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .st-PENDING { background: var(--pend-bg); color: var(--pend); }
+  .st-RUNNING { background: var(--run-bg); color: var(--run); }
+  .st-DONE { background: var(--ok-bg); color: var(--ok); }
+  .st-FAILED, .st-down { background: var(--bad-bg); color: var(--bad); }
+  .st-up { background: var(--ok-bg); color: var(--ok); }
+  .st-notready { background: var(--pend-bg); color: var(--pend); }
+  .m { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; padding: 1px 6px;
+       border-radius: 4px; color: #fff; }
+  .m-linear { background: var(--linear); } .m-mlp { background: var(--mlp); } .m-cnn { background: var(--cnn); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; font-size: 13px; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; background: #fafbfc; position: sticky; top: 0; }
+  td.num { font-variant-numeric: tabular-nums; text-align: right; }
+  .id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .cfg { color: var(--muted); font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar { width: 120px; height: 7px; background: var(--line); border-radius: 4px; overflow: hidden; display: inline-block; vertical-align: middle; }
+  .bar > i { display: block; height: 100%; background: var(--run); }
+  .bar.done > i { background: var(--ok); }
+  .scroll { max-height: 520px; overflow: auto; }
+  .tabs { display: flex; gap: 6px; margin-left: auto; text-transform: none; letter-spacing: 0; }
+  .tabs button { border: 1px solid var(--line); background: #fff; border-radius: 6px; padding: 3px 9px;
+                 font-size: 12px; cursor: pointer; color: var(--ink); }
+  .tabs button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .log { list-style: none; margin: 0; padding: 6px 0; max-height: 520px; overflow: auto; font-size: 12.5px; }
+  .log li { padding: 5px 14px; border-left: 3px solid transparent; }
+  .log li.warn { border-left-color: var(--bad); background: #fff7f6; }
+  .log li.good { border-left-color: var(--ok); }
+  .log .t { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 6px; }
+  .best { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 14px; }
+  .best > div { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .best .v { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); padding: 16px; }
+  .reas { color: var(--bad); font-weight: 600; }
+  @media (max-width: 1000px) { .grid2 { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(3, 1fr); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Servidor distribuido de pipelines</h1>
+  <div class="conn"><span class="dot" id="dot"></span><span id="conn">conectando…</span></div>
+</header>
+<main>
+  <div class="kpis">
+    <div class="kpi pend"><div class="v" id="k-pend">0</div><div class="l">Pendientes</div></div>
+    <div class="kpi run"><div class="v" id="k-run">0</div><div class="l">Corriendo</div></div>
+    <div class="kpi done"><div class="v" id="k-done">0</div><div class="l">Terminados</div></div>
+    <div class="kpi fail"><div class="v" id="k-fail">0</div><div class="l">Fallidos</div></div>
+    <div class="kpi reas"><div class="v" id="k-reas">0</div><div class="l">Reasignados</div></div>
+    <div class="kpi"><div class="v" id="k-nodes">0/0</div><div class="l">Nodos vivos</div></div>
+  </div>
+
+  <section>
+    <h2>Nodos</h2>
+    <div class="nodes" id="nodes"><div class="empty">Sin nodos todavía.</div></div>
+  </section>
+
+  <div class="grid2">
+    <section>
+      <h2>Trabajos
+        <span class="tabs" id="tabs">
+          <button data-f="" class="on">Todos</button><button data-f="RUNNING">Corriendo</button>
+          <button data-f="PENDING">Pendientes</button><button data-f="DONE">Terminados</button>
+          <button data-f="FAILED">Fallidos</button><button data-f="REAS">Reasignados</button>
+        </span>
+      </h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>job_id</th><th>Modelo</th><th>Estado</th><th>Nodo</th><th>Avance</th>
+            <th>Pérdida</th><th>Validación</th><th>Prueba</th><th>Intentos</th><th>Tiempo</th><th>Configuración</th></tr></thead>
+          <tbody id="jobs"></tbody>
+        </table>
+      </div>
+    </section>
+    <section>
+      <h2>Eventos</h2>
+      <ul class="log" id="log"></ul>
+    </section>
+  </div>
+
+  <section>
+    <h2>Mejor resultado por modelo (validación)</h2>
+    <div class="best" id="best"></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = (v, d = 4) => (typeof v === "number" ? v.toFixed(d) : "—");
+const short = (id) => (id || "").slice(0, 8);
+const hhmmss = (ts) => new Date(ts * 1000).toLocaleTimeString("es-MX", {hour12: false});
+let filter = "", last = null;
+
+const EV = {
+  job_submitted: ["Encolado", ""], job_started: ["Asignado", ""], job_done: ["Terminado", "good"],
+  job_failed: ["FALLÓ", "warn"], job_requeued: ["Reasignado", "warn"], worker_up: ["Nodo arriba", "good"],
+  worker_down: ["NODO CAÍDO", "warn"], result_discarded: ["Resultado duplicado descartado", "warn"],
+  job_duplicate_submit: ["Envío repetido (ya existía)", ""],
+};
+
+function evText(e) {
+  const p = e.payload || {};
+  const [label, cls] = EV[e.kind] || [e.kind, ""];
+  let t = `<b>${esc(label)}</b>`;
+  if (e.job_id) t += ` <span class="id">${esc(short(e.job_id))}</span>`;
+  if (e.worker_id) t += ` en <span class="id">${esc(e.worker_id)}</span>`;
+  if (p.reason) t += ` — ${esc(p.reason)}`;
+  if (e.kind === "job_started" && p.resume_epoch) t += ` (reanuda desde época ${p.resume_epoch})`;
+  if (e.kind === "job_done" && p.train_seconds) t += ` (${p.train_seconds.toFixed(1)}s)`;
+  return [t, cls];
+}
+
+function valMetric(j) {
+  const m = j.metrics || {}, live = j.live || {};
+  if (j.model === "cnn") return m.val_acc !== undefined ? `acc ${fmt(m.val_acc)}` : (live.val_acc !== undefined ? `acc ${fmt(live.val_acc)}` : "—");
+  return m.val_rmse !== undefined ? `rmse ${fmt(m.val_rmse, 3)}` : (live.val_rmse !== undefined ? `rmse ${fmt(live.val_rmse, 3)}` : "—");
+}
+function testMetric(j) {
+  const m = j.metrics || {};
+  if (j.model === "cnn") return m.test_acc !== undefined ? `acc ${fmt(m.test_acc)}` : "—";
+  return m.test_rmse !== undefined ? `rmse ${fmt(m.test_rmse, 2)} · R² ${fmt(m.test_r2, 3)}` : "—";
+}
+
+function render(s) {
+  last = s;
+  $("dot").classList.toggle("on", s.connected);
+  $("conn").textContent = (s.connected ? "conectado · " : "sin conexión con el coordinador · ") +
+    (s.server_time ? hhmmss(s.server_time) : "");
+  const jobs = s.jobs || [], workers = s.workers || [];
+  const count = (st) => jobs.filter(j => j.state === st).length;
+  $("k-pend").textContent = count("PENDING"); $("k-run").textContent = count("RUNNING");
+  $("k-done").textContent = count("DONE"); $("k-fail").textContent = count("FAILED");
+  $("k-reas").textContent = jobs.filter(j => j.reassignments > 0).length;
+  $("k-nodes").textContent = `${workers.filter(w => w.alive).length}/${workers.length}`;
+
+  const byId = Object.fromEntries(jobs.map(j => [j.job_id, j]));
+  $("nodes").innerHTML = workers.length ? workers.map(w => {
+    const st = !w.alive ? ["down", "caído"] : !w.ready ? ["notready", "no listo"] : ["up", "vivo"];
+    const ago = s.server_time ? Math.max(0, s.server_time - w.last_seen).toFixed(0) : "?";
+    // Trabajos que el coordinador tiene asignados a este nodo ahora mismo.
+    const mine = jobs.filter(j => j.state === "RUNNING" && j.worker_id === w.worker_id).map(j => j.job_id);
+    const running = (w.alive ? mine : []).map(id => {
+      const j = byId[id]; if (!j) return "";
+      const p = j.total_epochs > 1 ? ` ${j.epoch}/${j.total_epochs}` : "";
+      return `<span class="m m-${j.model}" title="${esc(id)}">${j.model} ${short(id)}${p}</span>`;
+    }).join("");
+    const slots = Object.entries(w.slots || {}).map(([k, v]) => `${k}=${v}`).join(" ");
+    return `<div class="node ${w.alive ? "" : "down"}"><div class="top"><span class="name">${esc(w.worker_id)}</span>
+      <span class="badge st-${st[0]}">${st[1]}</span></div>
+      <div class="meta">último latido hace ${ago}s · terminados ${w.completed} · fallidos ${w.failed}</div>
+      <div class="meta">bulkhead: ${esc(slots)}</div>
+      <div class="jobs">${running || '<span class="meta">sin trabajos</span>'}</div></div>`;
+  }).join("") : '<div class="empty">Sin nodos todavía.</div>';
+
+  const order = {RUNNING: 0, PENDING: 1, FAILED: 2, DONE: 3};
+  const shown = jobs.filter(j => !filter || (filter === "REAS" ? j.reassignments > 0 : j.state === filter))
+    .sort((a, b) => order[a.state] - order[b.state] || (b.reassignments - a.reassignments));
+  $("jobs").innerHTML = shown.length ? shown.map(j => {
+    const frac = j.state === "DONE" ? 1 : (j.total_epochs ? j.epoch / j.total_epochs : 0);
+    const cfg = Object.entries(j.config).filter(([k]) => !["features", "target", "target_transform", "checkpoint_every", "timeout_s"].includes(k))
+      .map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(" ");
+    return `<tr title="${esc(j.error || "")}">
+      <td class="id">${esc(short(j.job_id))}</td><td><span class="m m-${j.model}">${j.model}</span></td>
+      <td><span class="badge st-${j.state}">${j.state}</span></td><td class="id">${esc(j.worker_id || "—")}</td>
+      <td><span class="bar ${j.state === "DONE" ? "done" : ""}"><i style="width:${(frac * 100).toFixed(0)}%"></i></span>
+        <span class="meta"> ${j.epoch}/${j.total_epochs}${j.checkpoint_epoch && j.state !== "DONE" ? ` · ckpt ${j.checkpoint_epoch}` : ""}</span></td>
+      <td class="num">${j.loss ? (j.loss > 100 ? j.loss.toExponential(2) : fmt(j.loss)) : "—"}</td><td>${valMetric(j)}</td><td>${testMetric(j)}</td>
+      <td class="num">${j.attempts}${j.reassignments ? ` <span class="reas">↻${j.reassignments}</span>` : ""}</td>
+      <td class="num">${j.train_seconds ? j.train_seconds.toFixed(1) + "s" : "—"}</td>
+      <td class="cfg" title="${esc(cfg)}">${esc(cfg)}</td></tr>`;
+  }).join("") : `<tr><td colspan="11" class="empty">Sin trabajos.</td></tr>`;
+
+  $("log").innerHTML = (s.events || []).slice().reverse().map(e => {
+    const [t, cls] = evText(e);
+    return `<li class="${cls}"><span class="t">${hhmmss(e.ts)}</span>${t}</li>`;
+  }).join("") || '<li class="empty">Sin eventos.</li>';
+
+  const best = ["linear", "mlp", "cnn"].map(model => {
+    const done = jobs.filter(j => j.model === model && j.state === "DONE");
+    const key = model === "cnn" ? "val_acc" : "val_rmse";
+    const pick = done.filter(j => j.metrics[key] !== undefined)
+      .sort((a, b) => model === "cnn" ? b.metrics[key] - a.metrics[key] : a.metrics[key] - b.metrics[key])[0];
+    return `<div><span class="m m-${model}">${model}</span> <span class="meta">${done.length} terminados</span>
+      <div class="v">${pick ? `${key} = ${fmt(pick.metrics[key])}` : "—"}</div>
+      <div class="meta">${pick ? `${short(pick.job_id)} · prueba: ${testMetric(pick)}` : ""}</div></div>`;
+  }).join("");
+  $("best").innerHTML = best;
+}
+
+$("tabs").addEventListener("click", (e) => {
+  if (e.target.tagName !== "BUTTON") return;
+  filter = e.target.dataset.f;
+  [...$("tabs").children].forEach(b => b.classList.toggle("on", b === e.target));
+  if (last) render(last);
+});
+
+function connect() {
+  const es = new EventSource("/events");
+  es.onmessage = (m) => render(JSON.parse(m.data));
+  es.onerror = () => { $("dot").classList.remove("on"); $("conn").textContent = "reconectando con el dashboard…"; };
+}
+connect();
+</script>
+</body>
+</html>
