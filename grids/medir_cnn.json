@@ -1,0 +1,9 @@
+{
+  "name": "medir-cnn",
+  "seed": 42,
+  "requests": [
+    {"model": "cnn",
+     "config": {"epochs": 6, "conv_layers": 2, "batch_size": 64, "lr": 0.001},
+     "grid": {"filters": [8, 16], "img_size": [32, 64]}}
+  ]
+}

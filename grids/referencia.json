@@ -1,0 +1,16 @@
+{
+  "_comentario": "Conjunto de referencia (34 trabajos). Ajusten 'epochs' de la CNN para que cada trabajo de CNN dure al menos 1 minuto en sus máquinas, y luego NO lo cambien entre mediciones.",
+  "name": "referencia",
+  "seed": 42,
+  "requests": [
+    {"model": "linear",
+     "config": {"target": "num_lidar_pts", "normalize": true},
+     "grid": {"variant": ["ridge", "lasso"], "alpha": [0.01, 0.1, 1, 10]}},
+    {"model": "mlp",
+     "config": {"target": "num_lidar_pts", "normalize": true, "batch_size": 256},
+     "grid": {"hidden": [[32], [64, 32], [128, 64, 32]], "lr": [0.0005, 0.001, 0.005], "epochs": [30, 60]}},
+    {"model": "cnn",
+     "config": {"epochs": 72, "conv_layers": 2, "batch_size": 64},
+     "grid": {"filters": [8, 16], "lr": [0.001, 0.003], "img_size": [32, 64]}}
+  ]
+}
