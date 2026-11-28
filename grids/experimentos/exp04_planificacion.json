@@ -1,0 +1,7 @@
+{
+  "name": "exp04-planificacion",
+  "seed": 42,
+  "requests": [
+    {"model": "cnn", "config": {"lr": 0.001, "epochs": 24}, "grid": {"filters": [8, 16], "img_size": [32, 64]}}
+  ]
+}

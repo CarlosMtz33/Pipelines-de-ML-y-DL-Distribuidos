@@ -1,0 +1,8 @@
+{
+  "name": "exp01-log-objetivo",
+  "seed": 42,
+  "requests": [
+    {"model": "linear", "config": {"variant": "ridge", "alpha": 1}, "grid": {"target_transform": ["none", "log1p"]}},
+    {"model": "mlp", "config": {"hidden": [64, 32], "lr": 0.001, "epochs": 60}, "grid": {"target_transform": ["none", "log1p"]}}
+  ]
+}
